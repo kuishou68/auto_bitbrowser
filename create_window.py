@@ -53,35 +53,66 @@ def read_proxies(file_path: str) -> list:
     return proxies
 
 
-def smart_parse_account_line(line: str) -> dict:
+def read_separator_config(file_path: str) -> str:
     """
-    智能解析账号信息行
+    从文件顶部读取分隔符配置
     
-    支持各种分隔符：---- | , ; / \ 等
-    支持灵活字段：email、password、backup_email、2fa_secret
+    格式: 分隔符="----"
+    
+    Returns:
+        分隔符字符串，默认为 "----"
+    """
+    default_sep = "----"
+    
+    if not os.path.exists(file_path):
+        return default_sep
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # 查找分隔符配置行
+                if line.startswith('分隔符=') or line.startswith('separator='):
+                    # 提取引号内的内容
+                    import re
+                    match = re.search(r'["\'](.+?)["\']', line)
+                    if match:
+                        return match.group(1)
+                # 如果遇到非注释、非配置行，停止搜索
+                if not line.startswith('#') and '=' not in line:
+                    break
+    except Exception:
+        pass
+    
+    return default_sep
+
+
+def parse_account_line(line: str, separator: str) -> dict:
+    """
+    根据指定分隔符解析账号信息行
     
     Args:
         line: 账号信息行
+        separator: 分隔符
         
     Returns:
         解析后的账号字典
     """
-    import re
-    
     # 移除注释
     if '#' in line:
-        line = line.split('#')[0].strip()
+        comment_pos = line.find('#')
+        line = line[:comment_pos].strip()
     
     if not line:
         return None
     
-    # 识别所有可能的分隔符（非字母数字的连续字符）
-    # 常见分隔符: ----, |, ,, ;, /, \, 空格等
-    # 使用正则表达式分割，保留所有非空白的部分
-    parts = re.split(r'[^\w@.]+', line)
+    # 使用指定分隔符分割
+    parts = line.split(separator)
     parts = [p.strip() for p in parts if p.strip()]
     
-    if not parts:
+    if len(parts) < 2:
         return None
     
     result = {
@@ -92,47 +123,27 @@ def smart_parse_account_line(line: str) -> dict:
         'full_line': line
     }
     
-    emails = []
-    secrets = []
-    others = []
-    
-    # 分类各个部分
-    for part in parts:
-        if '@' in part and '.' in part:
-            # 邮箱格式
-            emails.append(part)
-        elif re.match(r'^[A-Z2-7]{16,}$', part):
-            # 2FA密钥格式（Base32编码，通常16-32位大写字母和数字2-7）
-            secrets.append(part)
-        else:
-            # 其他（可能是密码）
-            others.append(part)
-    
-    # 分配字段
-    if len(emails) >= 1:
-        result['email'] = emails[0]
-    if len(emails) >= 2:
-        result['backup_email'] = emails[1]
-    
-    if len(secrets) >= 1:
-        result['2fa_secret'] = secrets[0]
-    
-    if len(others) >= 1:
-        result['password'] = others[0]
+    # 按固定顺序分配字段
+    # 格式: 邮箱 [分隔符] 密码 [分隔符] 辅助邮箱 [分隔符] 2FA密钥
+    if len(parts) >= 1:
+        result['email'] = parts[0]
+    if len(parts) >= 2:
+        result['password'] = parts[1]
+    if len(parts) >= 3:
+        result['backup_email'] = parts[2]
+    if len(parts) >= 4:
+        result['2fa_secret'] = parts[3]
     
     return result if result['email'] else None
 
 
 def read_accounts(file_path: str) -> list:
     """
-    读取账户信息文件（智能解析版本）
+    读取账户信息文件（使用配置的分隔符）
     
-    支持多种格式：
-    - email----password----backup----secret
-    - email|password|secret
-    - email,password,backup,secret
-    - email password secret
-    等等...
+    文件格式：
+    第一行（可选）：分隔符="----"
+    后续行：邮箱[分隔符]密码[分隔符]辅助邮箱[分隔符]2FA密钥
     
     Args:
         file_path: 账户文件路径
@@ -146,18 +157,28 @@ def read_accounts(file_path: str) -> list:
         print(f"错误: 找不到文件 {file_path}")
         return accounts
     
+    # 读取分隔符配置
+    separator = read_separator_config(file_path)
+    print(f"使用分隔符: '{separator}'")
+    
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
+                
+                # 跳过空行和注释
                 if not line or line.startswith('#'):
                     continue
                 
-                account = smart_parse_account_line(line)
+                # 跳过配置行
+                if line.startswith('分隔符=') or line.startswith('separator='):
+                    continue
+                
+                account = parse_account_line(line, separator)
                 if account:
                     accounts.append(account)
                 else:
-                    print(f"警告: 第{line_num}行无法解析邮箱: {line[:50]}")
+                    print(f"警告: 第{line_num}行格式不正确: {line[:50]}")
     except Exception as e:
         print(f"读取文件出错: {e}")
     

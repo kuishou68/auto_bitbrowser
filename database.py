@@ -51,7 +51,8 @@ class DBManager:
     @staticmethod
     def _simple_parse(line):
         """
-        智能解析账号信息行（支持各种分隔符）
+        解析账号信息行（使用固定分隔符）
+        默认分隔符：----
         """
         import re
         
@@ -70,8 +71,17 @@ class DBManager:
             # 移除链接后继续解析
             line = line.replace(link, '').strip()
         
-        # 使用正则表达式分割（保留邮箱中的@和.）
-        parts = re.split(r'[^\w@.]+', line)
+        # 使用固定分隔符分割（默认 ----）
+        # 优先尝试 ----，如果没有则尝试其他常见分隔符
+        separator = '----'
+        if separator not in line:
+            # 尝试其他分隔符
+            for sep in ['---', '|', ',', ';', '\t']:
+                if sep in line:
+                    separator = sep
+                    break
+        
+        parts = line.split(separator)
         parts = [p.strip() for p in parts if p.strip()]
         
         email = None
@@ -79,31 +89,15 @@ class DBManager:
         rec = None
         sec = None
         
-        emails = []
-        secrets = []
-        others = []
-        
-        # 分类各个部分
-        for part in parts:
-            if '@' in part and '.' in part:
-                emails.append(part)
-            elif re.match(r'^[A-Z2-7]{16,}$', part):
-                # 2FA密钥（Base32）
-                secrets.append(part)
-            else:
-                others.append(part)
-        
-        # 分配字段
-        if len(emails) >= 1:
-            email = emails[0]
-        if len(emails) >= 2:
-            rec = emails[1]
-        
-        if len(secrets) >= 1:
-            sec = secrets[0]
-        
-        if len(others) >= 1:
-            pwd = others[0]
+        # 按固定顺序分配
+        if len(parts) >= 1:
+            email = parts[0]
+        if len(parts) >= 2:
+            pwd = parts[1]
+        if len(parts) >= 3:
+            rec = parts[2]
+        if len(parts) >= 4:
+            sec = parts[3]
         
         return email, pwd, rec, sec, link
 
