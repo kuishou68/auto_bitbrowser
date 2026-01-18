@@ -59,6 +59,7 @@ temp_icon.png
 # Exclude virtual env
 venv/
 env/
+.venv/
 
 # Exclude OS files
 .DS_Store

@@ -6,3 +6,5 @@ svglib
 reportlab
 Pillow
 cairosvg
+selenium
+deep-translator
